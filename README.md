@@ -15,7 +15,7 @@ Nothing in this repository flashes the tablet automatically.
 
 The kernel builds successfully and currently has early Hi3620 support for CPU/GIC/timers/PL011 plus initial K3 DW-MMC nodes for the internal eMMC and removable SD controller. The display, touch, USB gadget/networking, Wi-Fi, audio and power management are not considered working yet.
 
-For that reason **Console** is the recommended UI for first boot tests. Graphical UIs can be selected in the workflow for future testing, but a successful image build does not mean the LCD will display anything yet.
+For that reason **console** is the recommended UI for first boot tests. Graphical UIs can be selected in the workflow for future testing, but a successful image build does not mean the LCD will display anything yet.
 
 ## Build
 
@@ -25,15 +25,45 @@ Useful inputs:
 
 - **Channel**: `edge` (recommended for bring-up) or `v26.06` (stable)
 - **UI**: `console`, `fbkeyboard`, `weston`, `xfce4`, `phosh`, `plasma-mobile`
+- **Username**: Linux account name created in the image
+- **Password**: temporary Linux password used by pmbootstrap (workflow inputs are not secret)
 - **Extra packages**: optional comma-separated Alpine/postmarketOS packages
 - **UI extras**: include the optional extras recommended by the selected UI
 - **Debug tools**: add `strace`, `evtest`, `i2c-tools`, `mmc-utils`, `util-linux`, `e2fsprogs-extra`, `nano`
 - **Extra image space**: 512/1024/2048/4096 MiB
 - **SSH server**: enabled by default for headless bring-up
 
-The root filesystem is intentionally fixed to **ext4**. The service manager is left on postmarketOS `default`, so the selected UI can choose its supported manager; the recommended console bring-up remains the lightweight path.
+The root filesystem is fixed to **ext4** and the initial bring-up uses **OpenRC**.
 
-The CI-only initial login password is `147147`. Do not reuse it for a real installation exposed to a network.
+## Kernel releases
+
+The postmarketOS builder does **not** compile Linux anymore.
+
+Kernel development stays in:
+
+`vildangil/mediapad-s10-hi3620-linux`
+
+For each kernel version, publish a normal GitHub release there and attach the CI artifact renamed exactly to:
+
+`kernel.zip`
+
+The postmarketOS workflow automatically queries GitHub `releases/latest`, downloads `kernel.zip`, verifies the GitHub SHA-256 digest when available, and extracts:
+
+- `zImage`
+- `hi3620-s10-101x.dtb`
+
+The ZIP may also contain `zImage-dtb`, `kernel.config`, `SHA256SUMS`, and `kernel.release`; they do not hurt. The builder deliberately uses the **plain `zImage`**, because `deviceinfo_append_dtb=true` makes postmarketOS append the DTB itself when creating `boot.img`.
+
+For the current Linux tree, if `kernel.release` is not present in the ZIP the builder falls back to `4.9.51`.
+
+This means updating postmarketOS to a newer kernel is simply:
+
+1. build the kernel in `mediapad-s10-hi3620-linux`;
+2. create a newer normal GitHub release;
+3. upload its artifact as `kernel.zip`;
+4. run the postmarketOS workflow again.
+
+No commit SHA or kernel source checksum needs to be edited in this repository.
 
 ## Local pmaports overlay
 
@@ -42,15 +72,9 @@ The workflow clones the selected official pmaports branch and then overlays:
 - `device-huawei-s10-101x`
 - `linux-huawei-s10-101x`
 
+`linux-huawei-s10-101x` is now only a small prebuilt-kernel APK wrapper. It installs the downloaded `zImage`, board DTB and kernel release metadata in the locations expected by postmarketOS.
+
 The device package contains the stock Huawei Android boot header v0 layout and the current `kernel-cmdline.conf` debug console configuration.
-
-## Kernel source
-
-The local kernel aport is pinned to the known-good MediaPad branch in:
-
-`vildangil/mediapad-s10-hi3620-linux`
-
-It applies the compatibility fixes required to build this Linux 4.9 tree with current Alpine/GNU toolchains, including forcing ARMv7-A so Alpine's hard-float cross compiler cannot trigger the old kernel's ARMv5 fallback. It then builds `zImage` and `hi3620-s10-101x.dtb`.
 
 ## Artifacts
 
@@ -58,6 +82,7 @@ A successful run exports postmarketOS images into the workflow artifact together
 
 - `deviceinfo`
 - `kernel-cmdline.conf`
+- `kernel-release.txt` with the exact release tag/URL/digests used
 - `pmbootstrap_v3.cfg`
 - `pmbootstrap.log` when available
 - `SHA256SUMS`
