@@ -23,7 +23,7 @@ deviceinfo_append_dtb="true"
 # Legacy Huawei Android boot image v0
 deviceinfo_flash_method="fastboot"
 deviceinfo_generate_bootimg="true"
-deviceinfo_create_initfs_extra="true"
+deviceinfo_initfs_compression="lzma:best"
 deviceinfo_header_version="0"
 deviceinfo_bootimg_qcdt="false"
 deviceinfo_bootimg_dtb_second="false"
@@ -36,6 +36,5 @@ deviceinfo_flash_offset_tags="0x00000100"
 deviceinfo_flash_fastboot_partition_kernel="boot"
 deviceinfo_flash_fastboot_partition_rootfs="data"
 
-# Initial bring-up uses ext4 for both split bootfs and rootfs.
-deviceinfo_boot_filesystem="ext4"
+# Single-partition rootfs lives on Huawei p22 / data.
 deviceinfo_root_filesystem="ext4"
