@@ -157,9 +157,17 @@ jobs:
           ZIMAGE="$(find /tmp/kernel-release -type f -name zImage -print -quit)"
           DTB="$(find /tmp/kernel-release -type f -name hi3620-s10-101x.dtb -print -quit)"
           KREL="$(find /tmp/kernel-release -type f -name kernel.release -print -quit)"
+          KCONFIG="$(find /tmp/kernel-release -type f -name kernel.config -print -quit)"
 
           [[ -n "$ZIMAGE" && -s "$ZIMAGE" ]] || { echo 'kernel.zip is missing zImage' >&2; exit 2; }
           [[ -n "$DTB" && -s "$DTB" ]] || { echo 'kernel.zip is missing hi3620-s10-101x.dtb' >&2; exit 2; }
+
+          if [[ -n "$KCONFIG" && -s "$KCONFIG" ]]; then
+            grep -q '^CONFIG_RD_LZMA=y$' "$KCONFIG" || {
+              echo 'Released kernel does not support LZMA initramfs (CONFIG_RD_LZMA=y missing)' >&2
+              exit 2
+            }
+          fi
 
           cp "$ZIMAGE" "$APORDIR/zImage"
           cp "$DTB" "$APORDIR/hi3620-s10-101x.dtb"
@@ -301,7 +309,8 @@ jobs:
           fi
 
           INSTALL_ARGS=(
-            --split
+            --single-partition
+            --no-split
             --filesystem ext4
             --password "$PMOS_PASSWORD"
           )
@@ -314,12 +323,8 @@ jobs:
             INSTALL_ARGS+=(--add "$ADD_PACKAGES")
           fi
 
-          # Huawei cache is 256 MiB. pmbootstrap defaults to a 512 MiB
-          # split boot filesystem, so force it down to 128 MiB. The heavy
-          # initramfs-extra and /boot contents easily fit there.
           "$PMB" \
             -c "$PMB_CONFIG" \
-            -B 128 \
             -E "$EXTRA_SPACE_MB" \
             -y --details-to-stdout \
             install "${INSTALL_ARGS[@]}"
@@ -328,36 +333,56 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p artifacts/export artifacts/boot artifacts/bootfs artifacts/rootfs
+          mkdir -p artifacts/export artifacts/boot artifacts/rootfs
 
           "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
             -c "$PMB_CONFIG" \
-            -B 128 \
             -y --details-to-stdout \
             export "$GITHUB_WORKSPACE/artifacts/export"
 
           BOOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name boot.img -print -quit)"
-          BOOTFS_IMG="$(find artifacts/export -maxdepth 1 -type f -name '*-boot.img' -print -quit)"
-          ROOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name '*-root.img' -print -quit)"
+          ROOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name 'huawei-s10-101x.img' -print -quit)"
+
+          if [[ -z "$ROOT_IMG" ]]; then
+            ROOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name '*.img' ! -name boot.img -print -quit)"
+          fi
 
           [[ -n "$BOOT_IMG" && -s "$BOOT_IMG" ]] || { echo 'pmbootstrap export did not produce boot.img' >&2; exit 2; }
-          [[ -n "$BOOTFS_IMG" && -s "$BOOTFS_IMG" ]] || { echo 'pmbootstrap export did not produce split boot filesystem image' >&2; exit 2; }
-          [[ -n "$ROOT_IMG" && -s "$ROOT_IMG" ]] || { echo 'pmbootstrap export did not produce split root filesystem image' >&2; exit 2; }
+          [[ -n "$ROOT_IMG" && -s "$ROOT_IMG" ]] || { echo 'pmbootstrap export did not produce single-partition rootfs image' >&2; exit 2; }
+
+          BOOT_SIZE="$(stat -c '%s' "$BOOT_IMG")"
+          ROOT_SIZE="$(stat -c '%s' "$ROOT_IMG")"
+          BOOT_LIMIT=8388608
+          DATA_LIMIT=14331936768
+
+          echo "boot.img size: $BOOT_SIZE bytes (limit: $BOOT_LIMIT)"
+          echo "rootfs image size: $ROOT_SIZE bytes (p22/data limit: $DATA_LIMIT)"
+
+          if (( BOOT_SIZE > BOOT_LIMIT )); then
+            echo "boot.img is too large for the Huawei 8 MiB boot partition" >&2
+            exit 2
+          fi
+
+          if (( ROOT_SIZE > DATA_LIMIT )); then
+            echo "rootfs image is too large for Huawei p22/data" >&2
+            exit 2
+          fi
 
           cp "$BOOT_IMG" artifacts/boot/boot.img
-          cp "$BOOTFS_IMG" artifacts/bootfs/postmarketos-bootfs.img
           cp "$ROOT_IMG" artifacts/rootfs/postmarketos-rootfs.img
 
           printf '%s\n' \
-            'layout=split-initfs-extra' \
+            'layout=single-partition' \
             'boot_target=boot' \
-            'boot_partition_size_mib=8' \
-            'bootfs_target=cache' \
-            'bootfs_partition_size_mib=256' \
-            'bootfs_image_size_mib=128' \
-            'rootfs_target=VERIFY_P22_DATA' \
-            'note=p18_userdata_is_only_16MiB_do_not_flash_rootfs_there' \
-            "bootfs_export_name=$(basename "$BOOTFS_IMG")" \
+            'boot_partition=/dev/block/mmcblk0p11' \
+            'boot_partition_size_bytes=8388608' \
+            'rootfs_target=data' \
+            'rootfs_partition=/dev/block/mmcblk0p22' \
+            'rootfs_partition_size_bytes=14331936768' \
+            'cache_target=unused' \
+            'initfs_compression=lzma:best' \
+            "boot_image_size_bytes=$BOOT_SIZE" \
+            "rootfs_image_size_bytes=$ROOT_SIZE" \
             "rootfs_export_name=$(basename "$ROOT_IMG")" \
             > artifacts/layout.txt
 
