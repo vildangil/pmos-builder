@@ -1,0 +1,240 @@
+name: Build postmarketOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: postmarketOS channel
+        required: true
+        default: edge
+        type: choice
+        options:
+          - edge
+          - v26.06
+      ui:
+        description: User interface (console recommended until display works)
+        required: true
+        default: console
+        type: choice
+        options:
+          - console
+          - fbkeyboard
+          - weston
+          - xfce4
+          - phosh
+          - plasma-mobile
+      ui_extras:
+        description: Install optional extras for the selected UI
+        required: true
+        default: false
+        type: boolean
+      debug_tools:
+        description: Add bring-up/debug packages
+        required: true
+        default: true
+        type: boolean
+      extra_packages:
+        description: Extra packages, comma-separated (optional)
+        required: false
+        default: ""
+        type: string
+      extra_space_mb:
+        description: Extra rootfs image space in MiB
+        required: true
+        default: "1024"
+        type: choice
+        options:
+          - "512"
+          - "1024"
+          - "2048"
+          - "4096"
+      enable_sshd:
+        description: Enable SSH server in the image
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    env:
+      PMB_CONFIG: ${{ github.workspace }}/pmbootstrap_v3.cfg
+      PMB_WORK: ${{ github.workspace }}/pmbootstrap-work
+      PMAPORTS_DIR: ${{ github.workspace }}/pmaports-src
+      PMBOOTSTRAP_DIR: ${{ github.workspace }}/pmbootstrap-src
+
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@v4
+
+      - name: Install host requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git python3 openssl procps tar sudo \
+            qemu-user-static binfmt-support \
+            e2fsprogs util-linux xz-utils
+
+      - name: Clone pmbootstrap and pmaports
+        shell: bash
+        env:
+          PMOS_CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euxo pipefail
+
+          git clone --depth=1 \
+            https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git \
+            "$PMBOOTSTRAP_DIR"
+
+          if [[ "$PMOS_CHANNEL" == "edge" ]]; then
+            PMAPORTS_BRANCH="main"
+          else
+            PMAPORTS_BRANCH="$PMOS_CHANNEL"
+          fi
+
+          git clone --depth=1 --branch "$PMAPORTS_BRANCH" \
+            https://gitlab.postmarketos.org/postmarketOS/pmaports.git \
+            "$PMAPORTS_DIR"
+
+          cp -a pmaports/device/testing/device-huawei-s10-101x \
+            "$PMAPORTS_DIR/device/testing/"
+          cp -a pmaports/device/testing/linux-huawei-s10-101x \
+            "$PMAPORTS_DIR/device/testing/"
+
+      - name: Configure pmbootstrap
+        shell: bash
+        env:
+          PMOS_CHANNEL: ${{ inputs.channel }}
+          PMOS_UI: ${{ inputs.ui }}
+          PMOS_UI_EXTRAS: ${{ inputs.ui_extras }}
+        run: |
+          set -euxo pipefail
+          mkdir -p "$(dirname "$PMB_CONFIG")" "$PMB_WORK"
+
+          if [[ "$PMOS_CHANNEL" == "edge" ]]; then
+            IS_DEFAULT_CHANNEL="True"
+          else
+            IS_DEFAULT_CHANNEL="False"
+          fi
+
+          if [[ "$PMOS_UI_EXTRAS" == "true" ]]; then
+            UI_EXTRAS="True"
+          else
+            UI_EXTRAS="False"
+          fi
+
+          cat > "$PMB_CONFIG" <<EOF
+          [pmbootstrap]
+          aports = $PMAPORTS_DIR
+          device = huawei-s10-101x
+          hostname = mediapad-s10
+          is_default_channel = $IS_DEFAULT_CHANNEL
+          service_manager = default
+          ui = $PMOS_UI
+          ui_extras = $UI_EXTRAS
+          user = user
+          locale = en_US.UTF-8
+          timezone = GMT
+          build_pkgs_on_install = True
+          work = $PMB_WORK
+          EOF
+
+          "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
+            -c "$PMB_CONFIG" --details-to-stdout status
+
+          "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
+            -c "$PMB_CONFIG" --details-to-stdout \
+            deviceinfo_parse huawei-s10-101x
+
+      - name: Build installation
+        shell: bash
+        env:
+          DEBUG_TOOLS: ${{ inputs.debug_tools }}
+          EXTRA_PACKAGES: ${{ inputs.extra_packages }}
+          EXTRA_SPACE_MB: ${{ inputs.extra_space_mb }}
+          ENABLE_SSHD: ${{ inputs.enable_sshd }}
+        run: |
+          set -euxo pipefail
+
+          PMB="$PMBOOTSTRAP_DIR/pmbootstrap.py"
+          ADD_PACKAGES=""
+
+          if [[ "$DEBUG_TOOLS" == "true" ]]; then
+            ADD_PACKAGES="strace,evtest,i2c-tools,mmc-utils,util-linux,e2fsprogs-extra,nano"
+          fi
+
+          USER_PACKAGES="$(echo "$EXTRA_PACKAGES" | tr -d '[:space:]')"
+          if [[ -n "$USER_PACKAGES" ]]; then
+            if [[ -n "$ADD_PACKAGES" ]]; then
+              ADD_PACKAGES="$ADD_PACKAGES,$USER_PACKAGES"
+            else
+              ADD_PACKAGES="$USER_PACKAGES"
+            fi
+          fi
+
+          INSTALL_ARGS=(
+            --split
+            --filesystem ext4
+            --password 147147
+          )
+
+          if [[ "$ENABLE_SSHD" != "true" ]]; then
+            INSTALL_ARGS+=(--no-sshd)
+          fi
+
+          if [[ -n "$ADD_PACKAGES" ]]; then
+            INSTALL_ARGS+=(--add "$ADD_PACKAGES")
+          fi
+
+          "$PMB" \
+            -c "$PMB_CONFIG" \
+            -E "$EXTRA_SPACE_MB" \
+            -y --details-to-stdout \
+            install "${INSTALL_ARGS[@]}"
+
+      - name: Export images
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts/export
+
+          "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
+            -c "$PMB_CONFIG" \
+            -y --details-to-stdout \
+            export "$GITHUB_WORKSPACE/artifacts/export"
+
+          cp "$PMB_CONFIG" artifacts/pmbootstrap_v3.cfg
+          cp pmaports/device/testing/device-huawei-s10-101x/deviceinfo \
+            artifacts/deviceinfo
+          cp pmaports/device/testing/device-huawei-s10-101x/kernel-cmdline.conf \
+            artifacts/kernel-cmdline.conf
+
+          if [[ -f "$PMB_WORK/log.txt" ]]; then
+            cp "$PMB_WORK/log.txt" artifacts/pmbootstrap.log
+          fi
+
+          find artifacts -type f ! -name SHA256SUMS -print0 \
+            | sort -z | xargs -0 sha256sum > artifacts/SHA256SUMS
+          find artifacts -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+
+      - name: Collect failure log
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cp "$PMB_CONFIG" artifacts/pmbootstrap_v3.cfg 2>/dev/null || true
+          cp "$PMB_WORK/log.txt" artifacts/pmbootstrap.log 2>/dev/null || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmos-huawei-s10-101x-${{ inputs.channel }}-${{ inputs.ui }}-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30
