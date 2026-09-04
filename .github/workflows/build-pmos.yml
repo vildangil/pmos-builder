@@ -114,7 +114,7 @@ jobs:
           PMOS_UI_EXTRAS: ${{ inputs.ui_extras }}
         run: |
           set -euxo pipefail
-          mkdir -p "$(dirname "$PMB_CONFIG")" "$PMB_WORK"
+          mkdir -p "$(dirname "$PMB_CONFIG")"
 
           if [[ "$PMOS_CHANNEL" == "edge" ]]; then
             IS_DEFAULT_CHANNEL="True"
@@ -143,6 +143,40 @@ jobs:
           build_pkgs_on_install = True
           work = $PMB_WORK
           EOF
+
+          # A hand-written pmbootstrap config is fine for CI, but the work
+          # directory also has its own schema version marker. Creating an empty
+          # directory without this file makes `pmbootstrap status` think it is
+          # an ancient workspace that must be migrated.
+          WORK_VERSION="$(python3 - "$PMBOOTSTRAP_DIR" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          root = pathlib.Path(sys.argv[1]) / "pmb"
+          patterns = (
+              re.compile(r"(?m)^work_version\s*=\s*(\d+)\s*$"),
+              re.compile(r"(?m)^WORK_VERSION\s*=\s*(\d+)\s*$"),
+          )
+
+          for path in root.rglob("*.py"):
+              try:
+                  text = path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+              for pattern in patterns:
+                  match = pattern.search(text)
+                  if match:
+                      print(match.group(1))
+                      raise SystemExit(0)
+
+          raise SystemExit("Could not determine pmbootstrap work folder version")
+          PY
+          )"
+
+          install -d -m 700 "$PMB_WORK"
+          printf '%s\n' "$WORK_VERSION" > "$PMB_WORK/version"
+          echo "Initialized pmbootstrap workdir schema version $WORK_VERSION"
 
           "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
             -c "$PMB_CONFIG" --details-to-stdout status
