@@ -1,81 +1,45 @@
-# WIP Linux package for Huawei MediaPad 10 FHD S10-101x
+# Prebuilt kernel package for Huawei MediaPad 10 FHD S10-101x.
+#
+# The GitHub Actions workflow downloads kernel.zip from the latest published
+# release of vildangil/mediapad-s10-hi3620-linux, extracts zImage + DTB here,
+# and replaces the checksum placeholders below before pmbootstrap starts.
 pkgname=linux-huawei-s10-101x
-pkgver=4.9
+pkgver=4.9.51
 pkgrel=0
 pkgdesc="Linux 4.9 HiSilicon Hi3620 kernel for Huawei MediaPad 10 FHD"
 arch="armv7"
-_carch="arm"
 _flavor="huawei-s10-101x"
 url="https://github.com/vildangil/mediapad-s10-hi3620-linux"
 license="GPL-2.0-only"
 options="!strip !check !tracedeps pmb:cross-native"
-makedepends="
-	bash
-	bc
-	bison
-	devicepkg-dev
-	findutils
-	flex
-	linux-headers
-	openssl-dev
-	perl
-"
 
-_repository="mediapad-s10-hi3620-linux"
-_commit="a3b5f30fe6ae4ff1a0ccd890050070fbdcb8d6b4"
-_config="config-$_flavor.$arch"
 source="
-	$pkgname-$_commit.tar.gz::https://github.com/vildangil/$_repository/archive/$_commit.tar.gz
-	$_config
+	zImage
+	hi3620-s10-101x.dtb
+	kernel.release
 "
-builddir="$srcdir/$_repository-$_commit"
-_outdir="out"
-
-prepare() {
-	default_prepare
-
-	# Linux 4.9 bundled DTC defines yylloc in both parser and lexer. GCC 10+
-	# defaults to -fno-common, so keep the parser definition and make the
-	# lexer declarations extern.
-	sed -i 's/^YYLTYPE yylloc;$/extern YYLTYPE yylloc;/' \
-		scripts/dtc/dtc-lexer.l scripts/dtc/dtc-lexer.lex.c_shipped
-
-	# Modern GNU as treats '#' as an ARM comment marker. Convert the old
-	# ELF section syntax used by this 4.9 tree to current string flags.
-	sed -i 's/\.section "\.proc\.info\.init", #alloc/.section ".proc.info.init", "a"/' \
-		arch/arm/mm/proc-v7.S
-	sed -i 's/\.section "\.start", #alloc, #execinstr/.section ".start", "ax"/' \
-		arch/arm/boot/compressed/head.S
-	sed -i 's/\.section \.piggydata,#alloc/.section .piggydata,"a"/' \
-		arch/arm/boot/compressed/piggy.S
-
-	# The old cc-option probe can fail with Alpine's hard-float ARMv7 cross
-	# compiler and silently fall back to armv5t. The kernel itself does not
-	# use the userspace hard-float ABI, so select ARMv7-A directly.
-	sed -i 's#arch-$(CONFIG_CPU_32v7)[[:space:]]*=.*#arch-$(CONFIG_CPU_32v7) =-D__LINUX_ARM_ARCH__=7 -march=armv7-a#' \
-		arch/arm/Makefile
-
-	REPLACE_GCCH=0 . downstreamkernel_prepare
-}
 
 build() {
-	unset LDFLAGS
-	make O="$_outdir" ARCH="$_carch" CC="${CC:-gcc}" \
-		KBUILD_BUILD_VERSION="$((pkgrel + 1))-postmarketOS" \
-		zImage hi3620-s10-101x.dtb
+	# Kernel is built separately in mediapad-s10-hi3620-linux CI.
+	:
 }
 
 package() {
-	downstreamkernel_package "$builddir" "$pkgdir" "$_carch" \
-		"$_flavor" "$_outdir"
+	# Keep the plain zImage here. deviceinfo_append_dtb=true makes
+	# postmarketOS append hi3620-s10-101x.dtb exactly once when generating
+	# the Huawei Android boot image.
+	install -Dm644 "$srcdir/zImage" \
+		"$pkgdir/boot/vmlinuz"
 
-	# The board DTB is intentionally built as an explicit target while the
-	# S10 support is still experimental and not in the generic dtbs list.
-	install -Dm644 "$_outdir/arch/arm/boot/dts/hi3620-s10-101x.dtb" \
+	install -Dm644 "$srcdir/hi3620-s10-101x.dtb" \
 		"$pkgdir/boot/dtbs/hi3620-s10-101x.dtb"
+
+	install -Dm644 "$srcdir/kernel.release" \
+		"$pkgdir/usr/share/kernel/$_flavor/kernel.release"
 }
 
 sha512sums="
-SKIP  linux-huawei-s10-101x-a3b5f30fe6ae4ff1a0ccd890050070fbdcb8d6b4.tar.gz
-SKIP  config-huawei-s10-101x.armv7
+__ZIMAGE_SHA512__  zImage
+__DTB_SHA512__  hi3620-s10-101x.dtb
+__KERNEL_RELEASE_SHA512__  kernel.release
 "
