@@ -1,0 +1,32 @@
+# WIP device package for Huawei MediaPad 10 FHD S10-101x
+pkgname=device-huawei-s10-101x
+pkgdesc="Huawei MediaPad 10 FHD S10-101x"
+pkgver=0.1
+pkgrel=0
+url="https://postmarketos.org"
+license="MIT"
+arch="armv7"
+options="!check !archcheck"
+depends="
+	linux-huawei-s10-101x
+	mkbootimg
+	postmarketos-base
+"
+makedepends="devicepkg-dev"
+source="
+	deviceinfo
+	kernel-cmdline.conf
+"
+
+build() {
+	devicepkg_build $startdir $pkgname
+}
+
+package() {
+	devicepkg_package $startdir $pkgname
+}
+
+sha512sums="
+SKIP  deviceinfo
+SKIP  kernel-cmdline.conf
+"
