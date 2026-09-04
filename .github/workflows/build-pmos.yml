@@ -77,6 +77,7 @@ jobs:
       PMB_WORK: ${{ github.workspace }}/pmbootstrap-work
       PMAPORTS_DIR: ${{ github.workspace }}/pmaports-src
       PMBOOTSTRAP_DIR: ${{ github.workspace }}/pmbootstrap-src
+      KERNEL_META: ${{ github.workspace }}/kernel-release.txt
 
     steps:
       - name: Checkout builder
@@ -86,7 +87,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git python3 openssl procps tar sudo \
+            curl git python3 openssl procps tar sudo unzip \
             qemu-user-static binfmt-support \
             e2fsprogs util-linux xz-utils
 
@@ -115,6 +116,81 @@ jobs:
             "$PMAPORTS_DIR/device/testing/"
           cp -a pmaports/device/testing/linux-huawei-s10-101x \
             "$PMAPORTS_DIR/device/testing/"
+
+      - name: Fetch latest released kernel
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          APORDIR="$PMAPORTS_DIR/device/testing/linux-huawei-s10-101x"
+          RELEASE_JSON="$(curl -fsSL \
+            -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/vildangil/mediapad-s10-hi3620-linux/releases/latest)"
+
+          readarray -t RELEASE_INFO < <(python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          assets = {a["name"]: a for a in data.get("assets", [])}
+          if "kernel.zip" not in assets:
+              raise SystemExit("latest release has no kernel.zip asset")
+          print(data["tag_name"])
+          print(assets["kernel.zip"]["browser_download_url"])
+          print(assets["kernel.zip"].get("digest") or "")
+          ' <<<"$RELEASE_JSON")
+
+          KERNEL_TAG="${RELEASE_INFO[0]}"
+          KERNEL_URL="${RELEASE_INFO[1]}"
+          KERNEL_DIGEST="${RELEASE_INFO[2]}"
+
+          curl -fL "$KERNEL_URL" -o /tmp/kernel.zip
+
+          if [[ "$KERNEL_DIGEST" == sha256:* ]]; then
+            echo "${KERNEL_DIGEST#sha256:}  /tmp/kernel.zip" | sha256sum -c -
+          fi
+
+          rm -rf /tmp/kernel-release
+          mkdir -p /tmp/kernel-release
+          unzip -q /tmp/kernel.zip -d /tmp/kernel-release
+          find /tmp/kernel-release -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+
+          ZIMAGE="$(find /tmp/kernel-release -type f -name zImage -print -quit)"
+          DTB="$(find /tmp/kernel-release -type f -name hi3620-s10-101x.dtb -print -quit)"
+          KREL="$(find /tmp/kernel-release -type f -name kernel.release -print -quit)"
+
+          [[ -n "$ZIMAGE" && -s "$ZIMAGE" ]] || { echo 'kernel.zip is missing zImage' >&2; exit 2; }
+          [[ -n "$DTB" && -s "$DTB" ]] || { echo 'kernel.zip is missing hi3620-s10-101x.dtb' >&2; exit 2; }
+
+          cp "$ZIMAGE" "$APORDIR/zImage"
+          cp "$DTB" "$APORDIR/hi3620-s10-101x.dtb"
+
+          # Current 4.9 tree reports 4.9.51. Newer release ZIPs may provide the
+          # exact kernel.release file; prefer it whenever it is present.
+          if [[ -n "$KREL" && -s "$KREL" ]]; then
+            cp "$KREL" "$APORDIR/kernel.release"
+          else
+            printf '%s\n' '4.9.51' > "$APORDIR/kernel.release"
+          fi
+
+          ZSUM="$(sha512sum "$APORDIR/zImage" | awk '{print $1}')"
+          DSUM="$(sha512sum "$APORDIR/hi3620-s10-101x.dtb" | awk '{print $1}')"
+          KSUM="$(sha512sum "$APORDIR/kernel.release" | awk '{print $1}')"
+
+          sed -i \
+            -e "s/__ZIMAGE_SHA512__/$ZSUM/" \
+            -e "s/__DTB_SHA512__/$DSUM/" \
+            -e "s/__KERNEL_RELEASE_SHA512__/$KSUM/" \
+            "$APORDIR/APKBUILD"
+
+          {
+            echo "tag=$KERNEL_TAG"
+            echo "url=$KERNEL_URL"
+            echo "release_digest=$KERNEL_DIGEST"
+            echo "zImage_sha256=$(sha256sum "$APORDIR/zImage" | awk '{print $1}')"
+            echo "dtb_sha256=$(sha256sum "$APORDIR/hi3620-s10-101x.dtb" | awk '{print $1}')"
+            echo "kernel_release=$(cat "$APORDIR/kernel.release")"
+          } | tee "$KERNEL_META"
+
+          grep -qv '__.*_SHA512__' "$APORDIR/APKBUILD"
 
       - name: Configure pmbootstrap
         shell: bash
@@ -190,8 +266,6 @@ jobs:
           printf '%s\n' "$WORK_VERSION" > "$PMB_WORK/version"
           echo "Initialized pmbootstrap workdir schema version $WORK_VERSION"
 
-          # pmbootstrap 3.11.1 does not dispatch deviceinfo_parse reliably.
-          # status already parses enough config/device metadata for this early check.
           "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
             -c "$PMB_CONFIG" --details-to-stdout status
 
@@ -260,6 +334,7 @@ jobs:
             export "$GITHUB_WORKSPACE/artifacts/export"
 
           cp "$PMB_CONFIG" artifacts/pmbootstrap_v3.cfg
+          cp "$KERNEL_META" artifacts/kernel-release.txt
           cp pmaports/device/testing/device-huawei-s10-101x/deviceinfo \
             artifacts/deviceinfo
           cp pmaports/device/testing/device-huawei-s10-101x/kernel-cmdline.conf \
@@ -279,6 +354,7 @@ jobs:
         run: |
           mkdir -p artifacts
           cp "$PMB_CONFIG" artifacts/pmbootstrap_v3.cfg 2>/dev/null || true
+          cp "$KERNEL_META" artifacts/kernel-release.txt 2>/dev/null || true
           cp "$PMB_WORK/log.txt" artifacts/pmbootstrap.log 2>/dev/null || true
 
       - name: Upload artifacts
