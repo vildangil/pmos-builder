@@ -7,7 +7,7 @@ Private CI workspace for bringing up postmarketOS on the Huawei MediaPad 10 FHD 
 - ARMv7 postmarketOS root filesystem
 - a Huawei/Android `boot.img` using the custom Hi3620 Linux 4.9 kernel
 - separate boot/root images (`pmbootstrap install --split`)
-- build logs and checksums as GitHub Actions artifacts
+- build logs, selected configuration and SHA256 checksums as GitHub Actions artifacts
 
 Nothing in this repository flashes the tablet automatically.
 
@@ -27,10 +27,22 @@ Useful inputs:
 - **UI**: `console`, `fbkeyboard`, `weston`, `xfce4`, `phosh`, `plasma-mobile`
 - **Extra packages**: optional comma-separated Alpine/postmarketOS packages
 - **UI extras**: include the optional extras recommended by the selected UI
-- **Debug tools**: add bring-up tools such as `strace`, `evtest`, `i2c-tools`, `mmc-utils`, `util-linux`, `e2fsprogs-extra`, `nano`
-- **Extra image space**: additional rootfs space in MiB
+- **Debug tools**: add `strace`, `evtest`, `i2c-tools`, `mmc-utils`, `util-linux`, `e2fsprogs-extra`, `nano`
+- **Extra image space**: 512/1024/2048/4096 MiB
+- **SSH server**: enabled by default for headless bring-up
 
-The workflow intentionally fixes the service manager to **OpenRC** and the filesystem to **ext4** for the initial Linux 4.9 bring-up.
+The root filesystem is intentionally fixed to **ext4**. The service manager is left on postmarketOS `default`, so the selected UI can choose its supported manager; the recommended console bring-up remains the lightweight path.
+
+The CI-only initial login password is `147147`. Do not reuse it for a real installation exposed to a network.
+
+## Local pmaports overlay
+
+The workflow clones the selected official pmaports branch and then overlays:
+
+- `device-huawei-s10-101x`
+- `linux-huawei-s10-101x`
+
+The device package contains the stock Huawei Android boot header v0 layout and the current `kernel-cmdline.conf` debug console configuration.
 
 ## Kernel source
 
@@ -38,7 +50,19 @@ The local kernel aport is pinned to the known-good MediaPad branch in:
 
 `vildangil/mediapad-s10-hi3620-linux`
 
-It applies the compatibility fixes required to build this Linux 4.9 tree with current Alpine/GNU toolchains, then builds `zImage` and `hi3620-s10-101x.dtb`.
+It applies the compatibility fixes required to build this Linux 4.9 tree with current Alpine/GNU toolchains, including forcing ARMv7-A so Alpine's hard-float cross compiler cannot trigger the old kernel's ARMv5 fallback. It then builds `zImage` and `hi3620-s10-101x.dtb`.
+
+## Artifacts
+
+A successful run exports postmarketOS images into the workflow artifact together with:
+
+- `deviceinfo`
+- `kernel-cmdline.conf`
+- `pmbootstrap_v3.cfg`
+- `pmbootstrap.log` when available
+- `SHA256SUMS`
+
+Because this tablet has no working `fastboot boot` command, the CI deliberately does not try to test or flash the generated image.
 
 ## Flashing warning
 
