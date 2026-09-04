@@ -36,5 +36,6 @@ deviceinfo_flash_offset_tags="0x00000100"
 deviceinfo_flash_fastboot_partition_kernel="boot"
 deviceinfo_flash_fastboot_partition_rootfs="data"
 
-# Initial bring-up uses ext4 only.
+# Initial bring-up uses ext4 for both split bootfs and rootfs.
+deviceinfo_boot_filesystem="ext4"
 deviceinfo_root_filesystem="ext4"
