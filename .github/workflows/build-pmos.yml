@@ -125,9 +125,6 @@ jobs:
           APORDIR="$PMAPORTS_DIR/device/testing/linux-huawei-s10-101x"
           KERNEL_URL="https://github.com/vildangil/mediapad-s10-hi3620-linux/releases/latest/download/kernel.zip"
 
-          # Use GitHub's stable latest-release asset redirect instead of the
-          # unauthenticated REST API. The API can hit shared-runner rate limits
-          # and return 403 even though the public release asset is available.
           EFFECTIVE_URL="$(curl \
             --fail --location \
             --retry 5 --retry-delay 2 --retry-all-errors \
@@ -167,8 +164,6 @@ jobs:
           cp "$ZIMAGE" "$APORDIR/zImage"
           cp "$DTB" "$APORDIR/hi3620-s10-101x.dtb"
 
-          # New kernel releases contain kernel.release. Keep a conservative
-          # fallback for the first historical release.
           if [[ -n "$KREL" && -s "$KREL" ]]; then
             cp "$KREL" "$APORDIR/kernel.release"
           else
@@ -282,7 +277,6 @@ jobs:
           ENABLE_SSHD: ${{ inputs.enable_sshd }}
           PMOS_PASSWORD: ${{ inputs.password }}
         run: |
-          # Do not enable xtrace here: it would print the password argument.
           set -euo pipefail
 
           if [[ -z "$PMOS_PASSWORD" ]]; then
@@ -307,7 +301,8 @@ jobs:
           fi
 
           INSTALL_ARGS=(
-            --split
+            --single-partition
+            --no-split
             --filesystem ext4
             --password "$PMOS_PASSWORD"
           )
@@ -330,19 +325,32 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p artifacts/export
+          mkdir -p artifacts/export artifacts/boot artifacts/rootfs
 
           "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
             -c "$PMB_CONFIG" \
             -y --details-to-stdout \
             export "$GITHUB_WORKSPACE/artifacts/export"
 
+          BOOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name boot.img -print -quit)"
+          [[ -n "$BOOT_IMG" && -s "$BOOT_IMG" ]] || { echo 'pmbootstrap export did not produce boot.img' >&2; exit 2; }
+          cp "$BOOT_IMG" artifacts/boot/boot.img
+
+          ROOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name '*.img' ! -name boot.img -print -quit)"
+          [[ -n "$ROOT_IMG" && -s "$ROOT_IMG" ]] || { echo 'pmbootstrap export did not produce a single-partition rootfs image' >&2; exit 2; }
+          cp "$ROOT_IMG" artifacts/rootfs/postmarketos-rootfs.img
+
+          printf '%s\n' \
+            'layout=single-partition' \
+            'boot_target=boot' \
+            'rootfs_target=userdata' \
+            "rootfs_export_name=$(basename "$ROOT_IMG")" \
+            > artifacts/layout.txt
+
           cp "$PMB_CONFIG" artifacts/pmbootstrap_v3.cfg
           cp "$KERNEL_META" artifacts/kernel-release.txt
-          cp pmaports/device/testing/device-huawei-s10-101x/deviceinfo \
-            artifacts/deviceinfo
-          cp pmaports/device/testing/device-huawei-s10-101x/kernel-cmdline.conf \
-            artifacts/kernel-cmdline.conf
+          cp pmaports/device/testing/device-huawei-s10-101x/deviceinfo artifacts/deviceinfo
+          cp pmaports/device/testing/device-huawei-s10-101x/kernel-cmdline.conf artifacts/kernel-cmdline.conf
 
           if [[ -f "$PMB_WORK/log.txt" ]]; then
             cp "$PMB_WORK/log.txt" artifacts/pmbootstrap.log
