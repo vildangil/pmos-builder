@@ -314,8 +314,12 @@ jobs:
             INSTALL_ARGS+=(--add "$ADD_PACKAGES")
           fi
 
+          # Huawei cache is 256 MiB. pmbootstrap defaults to a 512 MiB
+          # split boot filesystem, so force it down to 128 MiB. The heavy
+          # initramfs-extra and /boot contents easily fit there.
           "$PMB" \
             -c "$PMB_CONFIG" \
+            -B 128 \
             -E "$EXTRA_SPACE_MB" \
             -y --details-to-stdout \
             install "${INSTALL_ARGS[@]}"
@@ -328,6 +332,7 @@ jobs:
 
           "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
             -c "$PMB_CONFIG" \
+            -B 128 \
             -y --details-to-stdout \
             export "$GITHUB_WORKSPACE/artifacts/export"
 
@@ -346,8 +351,12 @@ jobs:
           printf '%s\n' \
             'layout=split-initfs-extra' \
             'boot_target=boot' \
+            'boot_partition_size_mib=8' \
             'bootfs_target=cache' \
-            'rootfs_target=userdata' \
+            'bootfs_partition_size_mib=256' \
+            'bootfs_image_size_mib=128' \
+            'rootfs_target=VERIFY_P22_DATA' \
+            'note=p18_userdata_is_only_16MiB_do_not_flash_rootfs_there' \
             "bootfs_export_name=$(basename "$BOOTFS_IMG")" \
             "rootfs_export_name=$(basename "$ROOT_IMG")" \
             > artifacts/layout.txt
