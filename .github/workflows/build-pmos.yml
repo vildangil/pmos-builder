@@ -134,7 +134,7 @@ jobs:
           device = huawei-s10-101x
           hostname = mediapad-s10
           is_default_channel = $IS_DEFAULT_CHANNEL
-          service_manager = default
+          service_manager = openrc
           ui = $PMOS_UI
           ui_extras = $UI_EXTRAS
           user = user
@@ -144,10 +144,6 @@ jobs:
           work = $PMB_WORK
           EOF
 
-          # A hand-written pmbootstrap config is fine for CI, but the work
-          # directory also has its own schema version marker. Creating an empty
-          # directory without this file makes `pmbootstrap status` think it is
-          # an ancient workspace that must be migrated.
           WORK_VERSION="$(python3 - "$PMBOOTSTRAP_DIR" <<'PY'
           import pathlib
           import re
@@ -178,12 +174,10 @@ jobs:
           printf '%s\n' "$WORK_VERSION" > "$PMB_WORK/version"
           echo "Initialized pmbootstrap workdir schema version $WORK_VERSION"
 
+          # pmbootstrap 3.11.1 does not dispatch deviceinfo_parse reliably.
+          # status already parses enough config/device metadata for this early check.
           "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
             -c "$PMB_CONFIG" --details-to-stdout status
-
-          "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
-            -c "$PMB_CONFIG" --details-to-stdout \
-            deviceinfo_parse huawei-s10-101x
 
       - name: Build installation
         shell: bash
@@ -214,7 +208,7 @@ jobs:
           INSTALL_ARGS=(
             --split
             --filesystem ext4
-            --password 147147
+            --password pmos-test
           )
 
           if [[ "$ENABLE_SSHD" != "true" ]]; then
