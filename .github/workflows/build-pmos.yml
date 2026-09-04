@@ -23,6 +23,16 @@ on:
           - xfce4
           - phosh
           - plasma-mobile
+      username:
+        description: Linux username to create in the image
+        required: true
+        default: user
+        type: string
+      password:
+        description: Temporary Linux password (workflow inputs are not secret)
+        required: true
+        default: pmos-test
+        type: string
       ui_extras:
         description: Install optional extras for the selected UI
         required: true
@@ -112,9 +122,15 @@ jobs:
           PMOS_CHANNEL: ${{ inputs.channel }}
           PMOS_UI: ${{ inputs.ui }}
           PMOS_UI_EXTRAS: ${{ inputs.ui_extras }}
+          PMOS_USER: ${{ inputs.username }}
         run: |
           set -euxo pipefail
           mkdir -p "$(dirname "$PMB_CONFIG")"
+
+          if [[ ! "$PMOS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+            echo "Invalid username: use lowercase letters, digits, underscore or dash; start with a letter/underscore" >&2
+            exit 2
+          fi
 
           if [[ "$PMOS_CHANNEL" == "edge" ]]; then
             IS_DEFAULT_CHANNEL="True"
@@ -137,7 +153,7 @@ jobs:
           service_manager = openrc
           ui = $PMOS_UI
           ui_extras = $UI_EXTRAS
-          user = user
+          user = $PMOS_USER
           locale = en_US.UTF-8
           timezone = GMT
           build_pkgs_on_install = True
@@ -186,8 +202,15 @@ jobs:
           EXTRA_PACKAGES: ${{ inputs.extra_packages }}
           EXTRA_SPACE_MB: ${{ inputs.extra_space_mb }}
           ENABLE_SSHD: ${{ inputs.enable_sshd }}
+          PMOS_PASSWORD: ${{ inputs.password }}
         run: |
-          set -euxo pipefail
+          # Do not enable xtrace here: it would print the password argument.
+          set -euo pipefail
+
+          if [[ -z "$PMOS_PASSWORD" ]]; then
+            echo "Password must not be empty" >&2
+            exit 2
+          fi
 
           PMB="$PMBOOTSTRAP_DIR/pmbootstrap.py"
           ADD_PACKAGES=""
@@ -208,7 +231,7 @@ jobs:
           INSTALL_ARGS=(
             --split
             --filesystem ext4
-            --password pmos-test
+            --password "$PMOS_PASSWORD"
           )
 
           if [[ "$ENABLE_SSHD" != "true" ]]; then
