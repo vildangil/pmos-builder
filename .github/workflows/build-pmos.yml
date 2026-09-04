@@ -301,8 +301,7 @@ jobs:
           fi
 
           INSTALL_ARGS=(
-            --single-partition
-            --no-split
+            --split
             --filesystem ext4
             --password "$PMOS_PASSWORD"
           )
@@ -325,7 +324,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p artifacts/export artifacts/boot artifacts/rootfs
+          mkdir -p artifacts/export artifacts/boot artifacts/bootfs artifacts/rootfs
 
           "$PMBOOTSTRAP_DIR/pmbootstrap.py" \
             -c "$PMB_CONFIG" \
@@ -333,17 +332,23 @@ jobs:
             export "$GITHUB_WORKSPACE/artifacts/export"
 
           BOOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name boot.img -print -quit)"
-          [[ -n "$BOOT_IMG" && -s "$BOOT_IMG" ]] || { echo 'pmbootstrap export did not produce boot.img' >&2; exit 2; }
-          cp "$BOOT_IMG" artifacts/boot/boot.img
+          BOOTFS_IMG="$(find artifacts/export -maxdepth 1 -type f -name '*-boot.img' -print -quit)"
+          ROOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name '*-root.img' -print -quit)"
 
-          ROOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name '*.img' ! -name boot.img -print -quit)"
-          [[ -n "$ROOT_IMG" && -s "$ROOT_IMG" ]] || { echo 'pmbootstrap export did not produce a single-partition rootfs image' >&2; exit 2; }
+          [[ -n "$BOOT_IMG" && -s "$BOOT_IMG" ]] || { echo 'pmbootstrap export did not produce boot.img' >&2; exit 2; }
+          [[ -n "$BOOTFS_IMG" && -s "$BOOTFS_IMG" ]] || { echo 'pmbootstrap export did not produce split boot filesystem image' >&2; exit 2; }
+          [[ -n "$ROOT_IMG" && -s "$ROOT_IMG" ]] || { echo 'pmbootstrap export did not produce split root filesystem image' >&2; exit 2; }
+
+          cp "$BOOT_IMG" artifacts/boot/boot.img
+          cp "$BOOTFS_IMG" artifacts/bootfs/postmarketos-bootfs.img
           cp "$ROOT_IMG" artifacts/rootfs/postmarketos-rootfs.img
 
           printf '%s\n' \
-            'layout=single-partition' \
+            'layout=split-initfs-extra' \
             'boot_target=boot' \
+            'bootfs_target=cache' \
             'rootfs_target=userdata' \
+            "bootfs_export_name=$(basename "$BOOTFS_IMG")" \
             "rootfs_export_name=$(basename "$ROOT_IMG")" \
             > artifacts/layout.txt
 
