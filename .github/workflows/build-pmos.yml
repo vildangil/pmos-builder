@@ -123,33 +123,37 @@ jobs:
           set -euxo pipefail
 
           APORDIR="$PMAPORTS_DIR/device/testing/linux-huawei-s10-101x"
-          RELEASE_JSON="$(curl -fsSL \
-            -H 'Accept: application/vnd.github+json' \
-            https://api.github.com/repos/vildangil/mediapad-s10-hi3620-linux/releases/latest)"
+          KERNEL_URL="https://github.com/vildangil/mediapad-s10-hi3620-linux/releases/latest/download/kernel.zip"
 
-          readarray -t RELEASE_INFO < <(python3 -c '
-          import json, sys
-          data = json.load(sys.stdin)
-          assets = {a["name"]: a for a in data.get("assets", [])}
-          if "kernel.zip" not in assets:
-              raise SystemExit("latest release has no kernel.zip asset")
-          print(data["tag_name"])
-          print(assets["kernel.zip"]["browser_download_url"])
-          print(assets["kernel.zip"].get("digest") or "")
-          ' <<<"$RELEASE_JSON")
+          # Use GitHub's stable latest-release asset redirect instead of the
+          # unauthenticated REST API. The API can hit shared-runner rate limits
+          # and return 403 even though the public release asset is available.
+          EFFECTIVE_URL="$(curl \
+            --fail --location \
+            --retry 5 --retry-delay 2 --retry-all-errors \
+            --user-agent 'pmos-builder/1.0' \
+            --silent --show-error \
+            --write-out '%{url_effective}' \
+            --output /tmp/kernel.zip \
+            "$KERNEL_URL")"
 
-          KERNEL_TAG="${RELEASE_INFO[0]}"
-          KERNEL_URL="${RELEASE_INFO[1]}"
-          KERNEL_DIGEST="${RELEASE_INFO[2]}"
+          [[ -s /tmp/kernel.zip ]] || { echo 'Downloaded kernel.zip is empty' >&2; exit 2; }
 
-          curl -fL "$KERNEL_URL" -o /tmp/kernel.zip
+          KERNEL_TAG="$(python3 - "$EFFECTIVE_URL" <<'PY'
+          import re
+          import sys
 
-          if [[ "$KERNEL_DIGEST" == sha256:* ]]; then
-            echo "${KERNEL_DIGEST#sha256:}  /tmp/kernel.zip" | sha256sum -c -
-          fi
+          url = sys.argv[1]
+          match = re.search(r"/releases/download/([^/]+)/kernel\.zip(?:\?.*)?$", url)
+          print(match.group(1) if match else "latest")
+          PY
+          )"
+
+          KERNEL_ZIP_SHA256="$(sha256sum /tmp/kernel.zip | awk '{print $1}')"
 
           rm -rf /tmp/kernel-release
           mkdir -p /tmp/kernel-release
+          unzip -tq /tmp/kernel.zip
           unzip -q /tmp/kernel.zip -d /tmp/kernel-release
           find /tmp/kernel-release -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
 
@@ -163,8 +167,8 @@ jobs:
           cp "$ZIMAGE" "$APORDIR/zImage"
           cp "$DTB" "$APORDIR/hi3620-s10-101x.dtb"
 
-          # Current 4.9 tree reports 4.9.51. Newer release ZIPs may provide the
-          # exact kernel.release file; prefer it whenever it is present.
+          # New kernel releases contain kernel.release. Keep a conservative
+          # fallback for the first historical release.
           if [[ -n "$KREL" && -s "$KREL" ]]; then
             cp "$KREL" "$APORDIR/kernel.release"
           else
@@ -183,8 +187,8 @@ jobs:
 
           {
             echo "tag=$KERNEL_TAG"
-            echo "url=$KERNEL_URL"
-            echo "release_digest=$KERNEL_DIGEST"
+            echo "url=$EFFECTIVE_URL"
+            echo "kernel_zip_sha256=$KERNEL_ZIP_SHA256"
             echo "zImage_sha256=$(sha256sum "$APORDIR/zImage" | awk '{print $1}')"
             echo "dtb_sha256=$(sha256sum "$APORDIR/hi3620-s10-101x.dtb" | awk '{print $1}')"
             echo "kernel_release=$(cat "$APORDIR/kernel.release")"
