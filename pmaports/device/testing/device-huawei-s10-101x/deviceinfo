@@ -1,0 +1,38 @@
+# https://postmarketos.org/deviceinfo
+# Huawei MediaPad 10 FHD S10-101x / HiSilicon K3V2 (Hi3620)
+
+deviceinfo_format_version="0"
+deviceinfo_name="Huawei MediaPad 10 FHD"
+deviceinfo_manufacturer="Huawei"
+deviceinfo_codename="huawei-s10-101x"
+deviceinfo_year="2012"
+deviceinfo_arch="armv7"
+
+# Device related
+deviceinfo_chassis="tablet"
+deviceinfo_external_storage="true"
+deviceinfo_screen_width="1920"
+deviceinfo_screen_height="1200"
+deviceinfo_getty="ttyAMA0;115200"
+deviceinfo_drm="false"
+
+# Device tree
+deviceinfo_dtb="hi3620-s10-101x"
+deviceinfo_append_dtb="true"
+
+# Legacy Huawei Android boot image v0
+deviceinfo_flash_method="fastboot"
+deviceinfo_generate_bootimg="true"
+deviceinfo_header_version="0"
+deviceinfo_bootimg_qcdt="false"
+deviceinfo_bootimg_dtb_second="false"
+deviceinfo_flash_pagesize="2048"
+deviceinfo_flash_offset_base="0x00000000"
+deviceinfo_flash_offset_kernel="0x00008000"
+deviceinfo_flash_offset_ramdisk="0x01000000"
+deviceinfo_flash_offset_second="0x00f00000"
+deviceinfo_flash_offset_tags="0x00000100"
+deviceinfo_flash_fastboot_partition_kernel="boot"
+
+# Initial bring-up uses ext4 only.
+deviceinfo_root_filesystem="ext4"
