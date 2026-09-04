@@ -18,6 +18,7 @@ source="
 	hi3620-s10-101x.dtb
 	kernel.release
 "
+builddir="$srcdir"
 
 build() {
 	# Kernel is built separately in mediapad-s10-hi3620-linux CI.
