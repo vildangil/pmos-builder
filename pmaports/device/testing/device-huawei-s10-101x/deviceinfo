@@ -34,6 +34,7 @@ deviceinfo_flash_offset_ramdisk="0x01000000"
 deviceinfo_flash_offset_second="0x00f00000"
 deviceinfo_flash_offset_tags="0x00000100"
 deviceinfo_flash_fastboot_partition_kernel="boot"
+deviceinfo_flash_fastboot_partition_rootfs="data"
 
 # Initial bring-up uses ext4 only.
 deviceinfo_root_filesystem="ext4"
