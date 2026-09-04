@@ -162,9 +162,10 @@ jobs:
           [[ -n "$ZIMAGE" && -s "$ZIMAGE" ]] || { echo 'kernel.zip is missing zImage' >&2; exit 2; }
           [[ -n "$DTB" && -s "$DTB" ]] || { echo 'kernel.zip is missing hi3620-s10-101x.dtb' >&2; exit 2; }
 
+          # postmarketOS currently emits an XZ container for this initramfs.
           if [[ -n "$KCONFIG" && -s "$KCONFIG" ]]; then
-            grep -q '^CONFIG_RD_LZMA=y$' "$KCONFIG" || {
-              echo 'Released kernel does not support LZMA initramfs (CONFIG_RD_LZMA=y missing)' >&2
+            grep -q '^CONFIG_RD_XZ=y$' "$KCONFIG" || {
+              echo 'Released kernel does not support XZ initramfs (CONFIG_RD_XZ=y missing)' >&2
               exit 2
             }
           fi
@@ -285,6 +286,7 @@ jobs:
           ENABLE_SSHD: ${{ inputs.enable_sshd }}
           PMOS_PASSWORD: ${{ inputs.password }}
         run: |
+          # Do not enable xtrace here: it would print the password argument.
           set -euo pipefail
 
           if [[ -z "$PMOS_PASSWORD" ]]; then
@@ -329,7 +331,7 @@ jobs:
             -y --details-to-stdout \
             install "${INSTALL_ARGS[@]}"
 
-      - name: Export images
+      - name: Export, fit and validate images
         shell: bash
         run: |
           set -euxo pipefail
@@ -340,22 +342,29 @@ jobs:
             -y --details-to-stdout \
             export "$GITHUB_WORKSPACE/artifacts/export"
 
-          BOOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name boot.img -print -quit)"
-          ROOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name 'huawei-s10-101x.img' -print -quit)"
+          # pmbootstrap export deliberately creates symlinks. Test the known
+          # paths directly instead of using find -type f (which ignores them).
+          BOOT_SRC="$GITHUB_WORKSPACE/artifacts/export/boot.img"
+          ROOT_SRC="$GITHUB_WORKSPACE/artifacts/export/huawei-s10-101x.img"
 
-          if [[ -z "$ROOT_IMG" ]]; then
-            ROOT_IMG="$(find artifacts/export -maxdepth 1 -type f -name '*.img' ! -name boot.img -print -quit)"
-          fi
+          [[ -s "$BOOT_SRC" ]] || { echo 'pmbootstrap export did not produce boot.img' >&2; exit 2; }
+          [[ -s "$ROOT_SRC" ]] || { echo 'pmbootstrap export did not produce huawei-s10-101x.img' >&2; exit 2; }
 
-          [[ -n "$BOOT_IMG" && -s "$BOOT_IMG" ]] || { echo 'pmbootstrap export did not produce boot.img' >&2; exit 2; }
-          [[ -n "$ROOT_IMG" && -s "$ROOT_IMG" ]] || { echo 'pmbootstrap export did not produce single-partition rootfs image' >&2; exit 2; }
-
-          BOOT_SIZE="$(stat -c '%s' "$BOOT_IMG")"
-          ROOT_SIZE="$(stat -c '%s' "$ROOT_IMG")"
           BOOT_LIMIT=8388608
           DATA_LIMIT=14331936768
 
-          echo "boot.img size: $BOOT_SIZE bytes (limit: $BOOT_LIMIT)"
+          # Keep the exact initramfs contents, but recompress its existing XZ
+          # stream at preset 9 and rebuild the legacy Android boot image.
+          python3 scripts/repack-legacy-boot.py \
+            "$BOOT_SRC" artifacts/boot/boot.img \
+            --limit "$BOOT_LIMIT"
+
+          cp -L "$ROOT_SRC" artifacts/rootfs/postmarketos-rootfs.img
+
+          BOOT_SIZE="$(stat -c '%s' artifacts/boot/boot.img)"
+          ROOT_SIZE="$(stat -c '%s' artifacts/rootfs/postmarketos-rootfs.img)"
+
+          echo "final boot.img size: $BOOT_SIZE bytes (limit: $BOOT_LIMIT)"
           echo "rootfs image size: $ROOT_SIZE bytes (p22/data limit: $DATA_LIMIT)"
 
           if (( BOOT_SIZE > BOOT_LIMIT )); then
@@ -368,9 +377,6 @@ jobs:
             exit 2
           fi
 
-          cp "$BOOT_IMG" artifacts/boot/boot.img
-          cp "$ROOT_IMG" artifacts/rootfs/postmarketos-rootfs.img
-
           printf '%s\n' \
             'layout=single-partition' \
             'boot_target=boot' \
@@ -379,11 +385,12 @@ jobs:
             'rootfs_target=data' \
             'rootfs_partition=/dev/block/mmcblk0p22' \
             'rootfs_partition_size_bytes=14331936768' \
-            'cache_target=unused' \
-            'initfs_compression=lzma:best' \
+            'cache_target=untouched' \
+            'initfs_source_compression=lzma' \
+            'boot_ramdisk_repacked=xz-preset-9' \
             "boot_image_size_bytes=$BOOT_SIZE" \
             "rootfs_image_size_bytes=$ROOT_SIZE" \
-            "rootfs_export_name=$(basename "$ROOT_IMG")" \
+            'rootfs_export_name=huawei-s10-101x.img' \
             > artifacts/layout.txt
 
           cp "$PMB_CONFIG" artifacts/pmbootstrap_v3.cfg
