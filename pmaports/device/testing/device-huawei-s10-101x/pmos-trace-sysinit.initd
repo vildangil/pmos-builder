@@ -1,0 +1,24 @@
+#!/sbin/openrc-run
+
+description="Huawei S10 post-switch-root trace (sysinit)"
+
+depend() {
+    after devfs
+}
+
+start() {
+    uptime="$(cut -d ' ' -f 1 /proc/uptime 2>/dev/null || true)"
+    pid1="$(tr '\0' ' ' </proc/1/cmdline 2>/dev/null || true)"
+    rootfs="$(awk '$2 == "/" { print $1 ":" $3; exit }' /proc/mounts 2>/dev/null || true)"
+
+    [ -n "$uptime" ] || uptime="?"
+    [ -n "$pid1" ] || pid1="?"
+    [ -n "$rootfs" ] || rootfs="?"
+
+    if [ -w /dev/kmsg ]; then
+        printf '<6>PMOS-TRACE: openrc sysinit reached uptime=%s pid1="%s" root=%s\n' \
+            "$uptime" "$pid1" "$rootfs" > /dev/kmsg
+    fi
+
+    return 0
+}
