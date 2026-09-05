@@ -15,9 +15,13 @@ deviceinfo_screen_width="1920"
 deviceinfo_screen_height="1200"
 deviceinfo_getty="ttyAMA0;115200"
 deviceinfo_drm="false"
-# No Linux framebuffer/DRM driver exists yet. Do not stall initramfs for
-# /dev/fb0 or try to configure a bootloader framebuffer that Linux cannot own.
+# The kernel now exposes the bootloader scanout as simplefb/fbcon, but keep
+# initramfs framebuffer setup disabled so it does not try to reprogram timing.
 deviceinfo_no_framebuffer="true"
+
+# USB gadget network. The bring-up kernel provides configfs RNDIS and the
+# postmarketOS initramfs assigns 172.16.42.1 and runs its DHCP helper.
+deviceinfo_usb_network_function="rndis.usb0"
 
 # Device tree
 deviceinfo_dtb="hi3620-s10-101x"
