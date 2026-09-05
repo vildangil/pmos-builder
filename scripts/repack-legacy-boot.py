@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Recompress an Android boot image v0 ramdisk as XZ and rebuild the image.
+"""Recompress an Android boot image v0 ramdisk as kernel-compatible XZ.
 
 Huawei MediaPad 10 FHD has an 8 MiB boot partition. postmarketOS' generated
-initramfs is already an XZ stream when deviceinfo_initfs_compression=lxma, but
-its default compressor settings leave boot.img slightly too large. This tool
-keeps the exact initramfs contents and only recompresses the stream more
-aggressively, then updates ramdisk_size and the legacy boot SHA-1 id.
+initramfs is an XZ stream for this port, but its default compressor settings
+leave boot.img slightly too large and modern XZ defaults use CRC64. Linux 4.9
+in the S10 kernel accepts CRC32 but rejects CRC64 during early initramfs
+unpacking. This tool keeps the exact initramfs contents, recompresses them with
+XZ preset 9 + CRC32, then updates ramdisk_size and the legacy boot SHA-1 id.
 """
 
 from __future__ import annotations
@@ -70,10 +71,15 @@ def main() -> int:
     except lzma.LZMAError as exc:
         raise SystemExit(f"ramdisk is not an XZ/LZMA stream: {exc}") from exc
 
-    # XZ preset 9 gave a meaningful reduction on the real S10 pmOS initramfs.
-    recompressed = lzma.compress(raw_initramfs, format=lzma.FORMAT_XZ, preset=9)
-    if len(recompressed) >= len(ramdisk):
-        recompressed = ramdisk
+    # Linux 4.9's early XZ decoder in this kernel accepts CRC32, not CRC64.
+    # Never fall back to the original stream solely because it is smaller:
+    # modern tools commonly emit CRC64, which makes PID 1 unreachable.
+    recompressed = lzma.compress(
+        raw_initramfs,
+        format=lzma.FORMAT_XZ,
+        check=lzma.CHECK_CRC32,
+        preset=9,
+    )
 
     header = bytearray(image[:page_size])
     struct.pack_into("<I", header, RAMDISK_SIZE_OFFSET, len(recompressed))
@@ -108,6 +114,7 @@ def main() -> int:
     print(f"kernel_size={kernel_size}")
     print(f"old_ramdisk_size={ramdisk_size}")
     print(f"new_ramdisk_size={len(recompressed)}")
+    print("xz_check=crc32")
     print(f"old_boot_size={len(image)}")
     print(f"new_boot_size={len(output)}")
     print(f"sha256={hashlib.sha256(output).hexdigest()}")
