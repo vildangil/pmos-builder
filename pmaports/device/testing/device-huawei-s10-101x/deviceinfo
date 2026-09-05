@@ -15,6 +15,9 @@ deviceinfo_screen_width="1920"
 deviceinfo_screen_height="1200"
 deviceinfo_getty="ttyAMA0;115200"
 deviceinfo_drm="false"
+# No Linux framebuffer/DRM driver exists yet. Do not stall initramfs for
+# /dev/fb0 or try to configure a bootloader framebuffer that Linux cannot own.
+deviceinfo_no_framebuffer="true"
 
 # Device tree
 deviceinfo_dtb="hi3620-s10-101x"
