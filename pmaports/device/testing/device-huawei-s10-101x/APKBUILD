@@ -2,7 +2,7 @@
 pkgname=device-huawei-s10-101x
 pkgdesc="Huawei MediaPad 10 FHD S10-101x"
 pkgver=0.1
-pkgrel=0
+pkgrel=1
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
@@ -16,6 +16,9 @@ makedepends="devicepkg-dev"
 source="
 	deviceinfo
 	kernel-cmdline.conf
+	pmos-trace-sysinit.initd
+	pmos-trace-boot.initd
+	pmos-trace-default.initd
 "
 
 build() {
@@ -24,9 +27,20 @@ build() {
 
 package() {
 	devicepkg_package $startdir $pkgname
+
+	for phase in sysinit boot default; do
+		install -Dm755 "$srcdir/pmos-trace-$phase.initd" \
+			"$pkgdir/etc/init.d/pmos-trace-$phase"
+		install -d "$pkgdir/etc/runlevels/$phase"
+		ln -s "/etc/init.d/pmos-trace-$phase" \
+			"$pkgdir/etc/runlevels/$phase/pmos-trace-$phase"
+	done
 }
 
 sha512sums="
-724dfe696785be52eecf05af80d4bd03a784e4870edd2620031a9b11e06b3b8e31c18ad7e9ce4921af6694b28813e4278616c74c5f52f6415ce156e32b23fc95  deviceinfo
+e905a49a810d60e32c84c067a5fd4ccd5be0fe48050b4c3bbcba361e26ba6f481e01bce913563f94ab749ac81e001d19ecdaad7e0949d565c474666e6fb3a095  deviceinfo
 5698f5e1537e7c77aa26f11aaa699649af9ab7c9323d0f55898605b25e2ac3c066ffa59fe9f4756cf21169fba12a9cdd9eb32d987247523968532f2c20dab625  kernel-cmdline.conf
+f7edc382fd9bd5381111f0374741f06d0de1699052df361248745794efb86fde3733f3deebd2baac7a75cee58a0a46db0eb5faf3e2d191a6ac81bb1e05cb729b  pmos-trace-sysinit.initd
+975cc14a4203d2f1263e02d51b10bb35464b86c49d9869c5f1d4d3b19c7dac46e1321e35280e4b11b891e04315725491832f7c1d9091fcae4a668e8fc6a05c9a  pmos-trace-boot.initd
+b874d87bce60dfef7c6f7ffb6c935c7de46f61f835f0e0b0021ec94cd35bb1d983e4385935b91a8753d95215e289e485f271182baae37d22f52508517ff3dc9a  pmos-trace-default.initd
 "
