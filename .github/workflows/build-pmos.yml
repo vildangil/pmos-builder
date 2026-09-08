@@ -325,6 +325,8 @@ jobs:
             INSTALL_ARGS+=(--add "$ADD_PACKAGES")
           fi
 
+          "$PMB" -c "$PMB_CONFIG" checksum device-huawei-s10-101x
+          
           "$PMB" \
             -c "$PMB_CONFIG" \
             -E "$EXTRA_SPACE_MB" \
