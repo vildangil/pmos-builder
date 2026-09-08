@@ -326,7 +326,7 @@ jobs:
           fi
 
           "$PMB" -c "$PMB_CONFIG" checksum device-huawei-s10-101x
-          
+
           "$PMB" \
             -c "$PMB_CONFIG" \
             -E "$EXTRA_SPACE_MB" \
@@ -355,10 +355,14 @@ jobs:
           BOOT_LIMIT=8388608
           DATA_LIMIT=14331936768
 
-          # Keep the exact initramfs contents, but recompress its existing XZ
-          # stream at preset 9 and rebuild the legacy Android boot image.
+          # The S10 always uses an ext4 rootfs.  First remove only the tested
+          # btrfs/f2fs/xfs repair utilities from the early initramfs, then
+          # recompress the remaining CPIO with XZ preset 9 + CRC32.  The script
+          # preserves every retained CPIO entry byte-for-byte and rebuilds the
+          # Android v0 ramdisk size/SHA-1 fields.
           python3 scripts/repack-legacy-boot.py \
             "$BOOT_SRC" artifacts/boot/boot.img \
+            --slim-ext4-initramfs \
             --limit "$BOOT_LIMIT"
 
           cp -L "$ROOT_SRC" artifacts/rootfs/postmarketos-rootfs.img
@@ -388,8 +392,10 @@ jobs:
             'rootfs_partition=/dev/block/mmcblk0p22' \
             'rootfs_partition_size_bytes=14331936768' \
             'cache_target=untouched' \
+            'rootfs_filesystem=ext4' \
             'initfs_source_compression=lzma' \
-            'boot_ramdisk_repacked=xz-preset-9' \
+            'boot_ramdisk_pruned=btrfs-f2fs-xfs-tools' \
+            'boot_ramdisk_repacked=xz-preset-9-crc32' \
             "boot_image_size_bytes=$BOOT_SIZE" \
             "rootfs_image_size_bytes=$ROOT_SIZE" \
             'rootfs_export_name=huawei-s10-101x.img' \
