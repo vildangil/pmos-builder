@@ -2,7 +2,7 @@
 pkgname=device-huawei-s10-101x
 pkgdesc="Huawei MediaPad 10 FHD S10-101x"
 pkgver=0.1
-pkgrel=1
+pkgrel=2
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
@@ -19,6 +19,10 @@ source="
 	pmos-trace-sysinit.initd
 	pmos-trace-boot.initd
 	pmos-trace-default.initd
+	s10-edc-xorg.conf
+	s10-xfce-session-fix
+	s10-xfce-session-fix.desktop
+	s10-xdg.sh
 "
 
 build() {
@@ -35,6 +39,21 @@ package() {
 		ln -s "/etc/init.d/pmos-trace-$phase" \
 			"$pkgdir/etc/runlevels/$phase/pmos-trace-$phase"
 	done
+
+	# EDC KMS is functional now. Keep Xorg on modesetting/card0 while avoiding
+	# the old ShadowFB double copy; the EDC driver now has real vblank IRQs.
+	install -Dm644 "$srcdir/s10-edc-xorg.conf" \
+		"$pkgdir/etc/X11/xorg.conf.d/20-s10-edc.conf"
+
+	# XFCE board defaults. Do not replace Alpine/XFCE's own Garcon menu XML.
+	# The session helper creates only missing/recovery entries in the user's
+	# XDG application directory and leaves packaged menu definitions intact.
+	install -Dm755 "$srcdir/s10-xfce-session-fix" \
+		"$pkgdir/usr/local/sbin/s10-xfce-session-fix"
+	install -Dm644 "$srcdir/s10-xfce-session-fix.desktop" \
+		"$pkgdir/etc/xdg/autostart/s10-xfce-session-fix.desktop"
+	install -Dm644 "$srcdir/s10-xdg.sh" \
+		"$pkgdir/etc/profile.d/s10-xdg.sh"
 }
 
 sha512sums="
@@ -43,4 +62,8 @@ e905a49a810d60e32c84c067a5fd4ccd5be0fe48050b4c3bbcba361e26ba6f481e01bce913563f94
 f7edc382fd9bd5381111f0374741f06d0de1699052df361248745794efb86fde3733f3deebd2baac7a75cee58a0a46db0eb5faf3e2d191a6ac81bb1e05cb729b  pmos-trace-sysinit.initd
 975cc14a4203d2f1263e02d51b10bb35464b86c49d9869c5f1d4d3b19c7dac46e1321e35280e4b11b891e04315725491832f7c1d9091fcae4a668e8fc6a05c9a  pmos-trace-boot.initd
 b874d87bce60dfef7c6f7ffb6c935c7de46f61f835f0e0b0021ec94cd35bb1d983e4385935b91a8753d95215e289e485f271182baae37d22f52508517ff3dc9a  pmos-trace-default.initd
+65894165c74ad5bc7aa895672090579078dd2d0523bf8f8abf01c2708d09b05c516b94211ccf41f4a713c9c2c9bbddf7cbfa0158d5977e2b9caa19c73ee053bf  s10-edc-xorg.conf
+3dac8afac232ec911ef9c87dd0703baca7972df7fc2ef1193f23d1e5844bea2072c79c2bdfbd1ba57867aba031386b3711d1fa038093618fb281da822213e075  s10-xfce-session-fix
+ea731311920cca189ab36aedd5bc9f71fbacb35f331a0cfb42996261344e32878a9abd53c29a9216797df9af82e73a2c30edf1b14187eca43028b01803afea43  s10-xfce-session-fix.desktop
+46504cefec8cd71ee9b4c526bbf970eaa516203088491ab0afcbe88eddc12b862b31faf845c0d3000598c948ba395aa141f195a5391a18426085b059e9ee9f68  s10-xdg.sh
 "

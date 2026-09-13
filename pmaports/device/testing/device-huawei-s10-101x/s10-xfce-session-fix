@@ -1,0 +1,84 @@
+#!/bin/sh
+# Huawei MediaPad 10 FHD XFCE repair/performance helper.
+# Runs in the user session and is intentionally idempotent.
+
+log() {
+    [ -w /dev/kmsg ] && printf '<6>S10-XFCE: %s\n' "$*" > /dev/kmsg 2>/dev/null || true
+}
+
+# 1920x1200 compositing is prohibitively expensive until GC4000/etnaviv works.
+if command -v xfconf-query >/dev/null 2>&1; then
+    xfconf-query -c xfwm4 -p /general/use_compositing -s false >/dev/null 2>&1 || \
+    xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false >/dev/null 2>&1 || true
+
+    # Pick an icon theme which actually exists on the generated rootfs.
+    for theme in Adwaita elementary-xfce elementary hicolor; do
+        if [ -f "/usr/share/icons/$theme/index.theme" ]; then
+            xfconf-query -c xsettings -p /Net/IconThemeName -s "$theme" >/dev/null 2>&1 || \
+            xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "$theme" >/dev/null 2>&1 || true
+            break
+        fi
+    done
+fi
+
+apps="$HOME/.local/share/applications"
+desktop="$HOME/Desktop"
+mkdir -p "$apps" "$desktop" 2>/dev/null || true
+
+make_entry() {
+    cmd="$1" file="$2" name="$3" icon="$4" categories="$5"
+    command -v "$cmd" >/dev/null 2>&1 || return 0
+    cat > "$apps/$file" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=$name
+Exec=$cmd
+Icon=$icon
+Terminal=false
+Categories=$categories
+OnlyShowIn=XFCE;
+DESKTOP
+}
+
+# Direct escape hatches: these remain usable even if the panel/Garcon menu is
+# incomplete, and also become ordinary application menu entries.
+make_entry xfce4-appfinder s10-applications.desktop Applications org.xfce.appfinder 'Utility;System;'
+make_entry xfce4-settings-manager s10-settings.desktop Settings preferences-system 'Settings;System;'
+make_entry xfce4-terminal s10-terminal.desktop Terminal utilities-terminal 'System;TerminalEmulator;'
+make_entry thunar s10-files.desktop Files system-file-manager 'System;FileManager;'
+
+# xfce4-settings-manager consumes X-XFCE-SettingsDialog entries. Some minimal
+# pmOS/Alpine combinations have helper binaries but incomplete .desktop
+# metadata, leaving the Settings window empty. Supply only commands which
+# really exist on this image.
+make_entry xfce4-appearance-settings s10-settings-appearance.desktop Appearance preferences-desktop-theme 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
+make_entry xfce4-display-settings s10-settings-display.desktop Display video-display 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
+make_entry xfce4-keyboard-settings s10-settings-keyboard.desktop Keyboard preferences-desktop-keyboard 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
+make_entry xfce4-mouse-settings s10-settings-mouse.desktop 'Mouse and Touchpad' preferences-desktop-peripherals 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
+make_entry xfce4-power-manager-settings s10-settings-power.desktop 'Power Manager' xfce4-power-manager-settings 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
+make_entry xfwm4-settings s10-settings-wm.desktop 'Window Manager' preferences-system-windows 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
+make_entry xfce4-notifyd-config s10-settings-notifications.desktop Notifications preferences-desktop-notification 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
+
+# Put the four recovery launchers directly on the desktop as well.
+for pair in \
+    's10-applications.desktop:Applications.desktop' \
+    's10-settings.desktop:Settings.desktop' \
+    's10-terminal.desktop:Terminal.desktop' \
+    's10-files.desktop:Files.desktop'; do
+    src=${pair%%:*}
+    dst=${pair#*:}
+    if [ -r "$apps/$src" ]; then
+        cp -f "$apps/$src" "$desktop/$dst" 2>/dev/null || true
+        chmod 0755 "$desktop/$dst" 2>/dev/null || true
+    fi
+done
+
+# Do not preserve a stale bring-up session which can remember dead panel clients.
+rm -rf "$HOME/.cache/sessions" 2>/dev/null || true
+
+# Ask already-running components to re-read the application database.
+command -v xfdesktop >/dev/null 2>&1 && xfdesktop --reload >/dev/null 2>&1 || true
+command -v xfce4-panel >/dev/null 2>&1 && xfce4-panel -r >/dev/null 2>&1 || true
+
+log "compositor=off app_entries=$(find "$apps" -maxdepth 1 -name 's10-*.desktop' 2>/dev/null | wc -l | tr -d ' ') desktop_entries=$(find "$desktop" -maxdepth 1 -name '*.desktop' 2>/dev/null | wc -l | tr -d ' ')"
+exit 0
