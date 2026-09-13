@@ -1,34 +1,67 @@
 #!/bin/sh
 # Huawei MediaPad 10 FHD XFCE repair/performance helper.
-# Runs in the user session and is intentionally idempotent.
+# Runs inside the real XFCE user session; never replaces packaged menus.
+
+logfile="$HOME/.cache/s10-xfce-session-fix.log"
+mkdir -p "$HOME/.cache" "$HOME/.local/share/applications" "$HOME/Desktop" 2>/dev/null || true
 
 log() {
-    [ -w /dev/kmsg ] && printf '<6>S10-XFCE: %s\n' "$*" > /dev/kmsg 2>/dev/null || true
+    printf '%s\n' "$*" >>"$logfile" 2>/dev/null || true
 }
 
-# 1920x1200 compositing is prohibitively expensive until GC4000/etnaviv works.
-if command -v xfconf-query >/dev/null 2>&1; then
-    xfconf-query -c xfwm4 -p /general/use_compositing -s false >/dev/null 2>&1 || \
-    xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false >/dev/null 2>&1 || true
+is_running() {
+    pgrep -x "$1" >/dev/null 2>&1
+}
 
-    # Pick an icon theme which actually exists on the generated rootfs.
-    for theme in Adwaita elementary-xfce elementary hicolor; do
-        if [ -f "/usr/share/icons/$theme/index.theme" ]; then
-            xfconf-query -c xsettings -p /Net/IconThemeName -s "$theme" >/dev/null 2>&1 || \
-            xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "$theme" >/dev/null 2>&1 || true
-            break
-        fi
-    done
+start_if_missing() {
+    proc="$1"
+    shift
+    if is_running "$proc"; then
+        log "$proc already running"
+        return 0
+    fi
+    command -v "$proc" >/dev/null 2>&1 || {
+        log "$proc binary missing"
+        return 0
+    }
+    "$@" >>"$logfile" 2>&1 &
+    pid=$!
+    sleep 1
+    if kill -0 "$pid" 2>/dev/null || is_running "$proc"; then
+        log "$proc fallback started"
+    else
+        log "$proc fallback failed"
+    fi
+}
+
+log "start DISPLAY=${DISPLAY:-unset} XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-unset}"
+
+# A real XFCE session normally starts all of these. On the bring-up image
+# LightDM occasionally reaches the desktop with only part of the session.
+# In particular, a missing xfwm4 produces undecorated terminal windows.
+start_if_missing xfsettingsd xfsettingsd --replace
+start_if_missing xfwm4 xfwm4 --replace
+start_if_missing xfdesktop xfdesktop
+start_if_missing xfce4-panel xfce4-panel
+start_if_missing xfce4-power-manager xfce4-power-manager
+
+# Compositing at 1920x1200 is too expensive until GC4000/etnaviv works.
+if command -v xfconf-query >/dev/null 2>&1; then
+    xfconf-query -c xfwm4 -p /general/use_compositing -s false >/dev/null 2>&1 ||
+        xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false >/dev/null 2>&1 || true
 fi
 
 apps="$HOME/.local/share/applications"
 desktop="$HOME/Desktop"
-mkdir -p "$apps" "$desktop" 2>/dev/null || true
 
 make_entry() {
-    cmd="$1" file="$2" name="$3" icon="$4" categories="$5"
+    cmd="$1"
+    file="$2"
+    name="$3"
+    icon="$4"
+    categories="$5"
     command -v "$cmd" >/dev/null 2>&1 || return 0
-    cat > "$apps/$file" <<DESKTOP
+    cat >"$apps/$file" <<EOF
 [Desktop Entry]
 Type=Application
 Name=$name
@@ -37,29 +70,15 @@ Icon=$icon
 Terminal=false
 Categories=$categories
 OnlyShowIn=XFCE;
-DESKTOP
+EOF
 }
 
-# Direct escape hatches: these remain usable even if the panel/Garcon menu is
-# incomplete, and also become ordinary application menu entries.
+# These are escape hatches only. They do not replace the distro Garcon menu.
 make_entry xfce4-appfinder s10-applications.desktop Applications org.xfce.appfinder 'Utility;System;'
 make_entry xfce4-settings-manager s10-settings.desktop Settings preferences-system 'Settings;System;'
 make_entry xfce4-terminal s10-terminal.desktop Terminal utilities-terminal 'System;TerminalEmulator;'
 make_entry thunar s10-files.desktop Files system-file-manager 'System;FileManager;'
 
-# xfce4-settings-manager consumes X-XFCE-SettingsDialog entries. Some minimal
-# pmOS/Alpine combinations have helper binaries but incomplete .desktop
-# metadata, leaving the Settings window empty. Supply only commands which
-# really exist on this image.
-make_entry xfce4-appearance-settings s10-settings-appearance.desktop Appearance preferences-desktop-theme 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
-make_entry xfce4-display-settings s10-settings-display.desktop Display video-display 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
-make_entry xfce4-keyboard-settings s10-settings-keyboard.desktop Keyboard preferences-desktop-keyboard 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
-make_entry xfce4-mouse-settings s10-settings-mouse.desktop 'Mouse and Touchpad' preferences-desktop-peripherals 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
-make_entry xfce4-power-manager-settings s10-settings-power.desktop 'Power Manager' xfce4-power-manager-settings 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
-make_entry xfwm4-settings s10-settings-wm.desktop 'Window Manager' preferences-system-windows 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
-make_entry xfce4-notifyd-config s10-settings-notifications.desktop Notifications preferences-desktop-notification 'XFCE;Settings;DesktopSettings;X-XFCE-SettingsDialog;'
-
-# Put the four recovery launchers directly on the desktop as well.
 for pair in \
     's10-applications.desktop:Applications.desktop' \
     's10-settings.desktop:Settings.desktop' \
@@ -73,12 +92,7 @@ for pair in \
     fi
 done
 
-# Do not preserve a stale bring-up session which can remember dead panel clients.
-rm -rf "$HOME/.cache/sessions" 2>/dev/null || true
-
-# Ask already-running components to re-read the application database.
 command -v xfdesktop >/dev/null 2>&1 && xfdesktop --reload >/dev/null 2>&1 || true
-command -v xfce4-panel >/dev/null 2>&1 && xfce4-panel -r >/dev/null 2>&1 || true
 
-log "compositor=off app_entries=$(find "$apps" -maxdepth 1 -name 's10-*.desktop' 2>/dev/null | wc -l | tr -d ' ') desktop_entries=$(find "$desktop" -maxdepth 1 -name '*.desktop' 2>/dev/null | wc -l | tr -d ' ')"
+log "wm=$(pgrep -x xfwm4 2>/dev/null | tr '\n' ',') panel=$(pgrep -x xfce4-panel 2>/dev/null | tr '\n' ',') desktop=$(pgrep -x xfdesktop 2>/dev/null | tr '\n' ',') settings=$(pgrep -x xfsettingsd 2>/dev/null | tr '\n' ',')"
 exit 0
