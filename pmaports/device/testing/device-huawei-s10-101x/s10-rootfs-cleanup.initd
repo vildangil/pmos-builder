@@ -1,0 +1,67 @@
+#!/sbin/openrc-run
+
+description="Remove obsolete MediaPad XFCE bring-up overrides before LightDM"
+
+depend() {
+    need localmount
+    before lightdm display-manager
+}
+
+start() {
+    ebegin "Cleaning obsolete MediaPad XFCE bring-up overrides"
+
+    # Exact artifacts written by the old initramfs zz-s10-xfce-vtfix.sh.
+    rm -f \
+        /usr/local/sbin/s10-lightdm-display-setup \
+        /usr/local/sbin/s10-xfce-performance \
+        /usr/local/sbin/s10-xfce-desktop-fix \
+        /usr/local/sbin/s10-vt-monitor \
+        /usr/local/sbin/s10-lightdm-log-watch \
+        /usr/local/sbin/s10-xfce-session \
+        /usr/share/xsessions/s10-xfce.desktop \
+        /usr/share/applications/s10-terminal.desktop \
+        /usr/share/applications/s10-files.desktop \
+        /etc/lightdm/lightdm.conf.d/97-s10-autologin.conf \
+        /etc/lightdm/lightdm.conf.d/98-s10-fast-start.conf \
+        /etc/lightdm/lightdm.conf.d/99-s10-vt-fix.conf \
+        /etc/lightdm/lightdm.conf.d/99-s10-autologin.conf \
+        /etc/X11/xorg.conf.d/10-s10-simplefb.conf \
+        /etc/X11/xorg.conf.d/20-s10-edc-kms.conf \
+        /etc/xdg/autostart/s10-xfce-performance.desktop \
+        /etc/xdg/autostart/s10-xfce-terminal.desktop \
+        /etc/xdg/autostart/s10-xfce-desktop-fix.desktop \
+        /etc/xdg/autostart/s10-xfce-repair.desktop \
+        /etc/runlevels/default/pmos-vt-monitor \
+        /etc/runlevels/default/pmos-lightdm-log-watch \
+        /etc/init.d/pmos-vt-monitor \
+        /etc/init.d/pmos-lightdm-log-watch
+
+    # The old bring-up hook overwrote both menu XML files. Restore known-good
+    # upstream Xfce 4.20 definitions stored outside the package-owned paths.
+    install -d /etc/xdg/menus
+    if [ -r /usr/share/s10-xfce-defaults/xfce-applications.menu ]; then
+        install -m644 /usr/share/s10-xfce-defaults/xfce-applications.menu \
+            /etc/xdg/menus/xfce-applications.menu
+    fi
+    if [ -r /usr/share/s10-xfce-defaults/xfce-settings-manager.menu ]; then
+        install -m644 /usr/share/s10-xfce-defaults/xfce-settings-manager.menu \
+            /etc/xdg/menus/xfce-settings-manager.menu
+    fi
+
+    # The standard Xfce session owns the panel layout from now on.
+    rm -rf /etc/xdg/xfce4/panel
+
+    if [ -w /dev/kmsg ]; then
+        session=absent; setup=absent; autologin=absent
+        [ -e /usr/local/sbin/s10-xfce-session ] && session=present
+        [ -e /usr/local/sbin/s10-lightdm-display-setup ] && setup=present
+        [ -e /etc/lightdm/lightdm.conf.d/97-s10-autologin.conf ] && autologin=present
+        printf '<6>S10-ROOTFS-CLEAN: session=%s setup=%s autologin=%s apps_menu=%s settings_menu=%s\n' \
+            "$session" "$setup" "$autologin" \
+            "$(test -s /etc/xdg/menus/xfce-applications.menu && echo present || echo missing)" \
+            "$(test -s /etc/xdg/menus/xfce-settings-manager.menu && echo present || echo missing)" \
+            >/dev/kmsg 2>/dev/null || true
+    fi
+
+    eend 0
+}
