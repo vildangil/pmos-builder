@@ -2,7 +2,7 @@
 pkgname=device-huawei-s10-101x
 pkgdesc="Huawei MediaPad 10 FHD S10-101x"
 pkgver=0.1
-pkgrel=4
+pkgrel=5
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
@@ -47,9 +47,10 @@ package() {
 		"$pkgdir/etc/X11/xorg.conf.d/20-s10-edc.conf"
 
 	# Require the normal LightDM greeter/password flow instead of entering the
-	# postmarketOS user session automatically after X starts.
+	# postmarketOS user session automatically after X starts. Keep this at 99
+	# so it overrides the UI package's own autologin drop-in.
 	install -Dm644 "$srcdir/s10-lightdm-no-autologin.conf" \
-		"$pkgdir/etc/lightdm/lightdm.conf.d/50-s10-no-autologin.conf"
+		"$pkgdir/etc/lightdm/lightdm.conf.d/99-s10-no-autologin.conf"
 
 	# XFCE board defaults. Do not replace Alpine/XFCE's own Garcon menu XML.
 	# The session helper creates only missing/recovery entries in the user's
