@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=MediaPad XFCE setup
-Exec=/usr/local/sbin/s10-xfce-session-fix
+Exec=/usr/libexec/s10-xfce-session-fix
 OnlyShowIn=XFCE;
 NoDisplay=true
 X-GNOME-Autostart-enabled=true
