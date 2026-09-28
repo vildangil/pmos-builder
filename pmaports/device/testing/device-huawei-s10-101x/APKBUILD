@@ -2,7 +2,7 @@
 pkgname=device-huawei-s10-101x
 pkgdesc="Huawei MediaPad 10 FHD S10-101x"
 pkgver=0.1
-pkgrel=8
+pkgrel=9
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
@@ -22,6 +22,7 @@ source="
 	pmos-trace-default.initd
 	s10-edc-xorg.conf
 	s10-lightdm-no-autologin.conf
+	s10-lightdm-simplefb.conf
 	s10-rootfs-cleanup.initd
 	s10-xfce-applications.menu
 	s10-xfce-settings-manager.menu
@@ -54,6 +55,11 @@ package() {
 	# package snippets so an old or distro autologin stanza cannot win by order.
 	install -Dm644 "$srcdir/s10-lightdm-no-autologin.conf" \
 		"$pkgdir/etc/lightdm/lightdm.conf.d/zz-s10-no-autologin.conf"
+
+	# simplefb has no DRM connector, so elogind does not mark seat0 graphical.
+	# Force LightDM to create the local seat anyway and keep Xorg on fbdev.
+	install -Dm644 "$srcdir/s10-lightdm-simplefb.conf" \
+		"$pkgdir/etc/lightdm/lightdm.conf.d/zz-s10-simplefb.conf"
 
 	# Remove every file written by the old initramfs XFCE bring-up hook on the
 	# real root filesystem, after switch_root and before LightDM starts.
@@ -90,6 +96,7 @@ f7edc382fd9bd5381111f0374741f06d0de1699052df361248745794efb86fde3733f3deebd2baac
 b874d87bce60dfef7c6f7ffb6c935c7de46f61f835f0e0b0021ec94cd35bb1d983e4385935b91a8753d95215e289e485f271182baae37d22f52508517ff3dc9a  pmos-trace-default.initd
 9c290492e50fffd6e5de9306fd92b9348f439b514201fc7a7ef5bffd5d8a2d753fd516e43fe53d8c347dbb118b18c89b6f995a5e41eda84774eb5123a3ce47a7  s10-edc-xorg.conf
 c5c65bb789a53f7eab92774e15f383fc6b3e2f6272705e6a607fcd6e4a152a10d6977afa55226af3f02b75551207cf7fd02765042e9e5b56b71c9f4b38f1bc99  s10-lightdm-no-autologin.conf
+f1d6f770a2d0136cce9cf8ecb52109185cbd13378bf98df8e76cbb5e50b949620cc8c8a3910617ff9d09037c1cf46b5976e85ef1d326ccc4a17907c5e71acdef  s10-lightdm-simplefb.conf
 ad80cda9ab38a90a443068aaf05298f7a8cc49097c916989b56f9d43bcbeb854cfd2c8534474eaf7f97ae332a003d0b85241660b8a998825f285cd8b9136d5c0  s10-rootfs-cleanup.initd
 cf1239862745c1afa0c215fdb75112881ae4d529d7c4eb334bf37b12cb76d40415db3d8548ca707e1a6dac76323e14e1f33bd21a9124e16bda34f1571ce8c13b  s10-xfce-applications.menu
 87755d5e8834273dcf976e8e57f1623949ed8ed59fbb779a74fca09f7b97783682a8551988b7c1ed8c9a94454120badc55af6e6988262d0aedd852fea34fe198  s10-xfce-settings-manager.menu
