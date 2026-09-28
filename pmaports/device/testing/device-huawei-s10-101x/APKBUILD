@@ -2,7 +2,7 @@
 pkgname=device-huawei-s10-101x
 pkgdesc="Huawei MediaPad 10 FHD S10-101x"
 pkgver=0.1
-pkgrel=7
+pkgrel=8
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
@@ -11,6 +11,7 @@ depends="
 	linux-huawei-s10-101x
 	mkbootimg
 	postmarketos-base
+	xf86-video-fbdev
 "
 makedepends="devicepkg-dev"
 source="
@@ -44,8 +45,8 @@ package() {
 			"$pkgdir/etc/runlevels/$phase/pmos-trace-$phase"
 	done
 
-	# EDC KMS is functional now. Keep Xorg on modesetting/card0 while avoiding
-	# the old ShadowFB double copy; the EDC driver now has real vblank IRQs.
+	# Stable display path is the bootloader simplefb. Native EDC/DRM is still
+	# experimental and /dev/dri/card0 is intentionally absent on the base DT.
 	install -Dm644 "$srcdir/s10-edc-xorg.conf" \
 		"$pkgdir/etc/X11/xorg.conf.d/20-s10-edc.conf"
 
@@ -87,7 +88,7 @@ e905a49a810d60e32c84c067a5fd4ccd5be0fe48050b4c3bbcba361e26ba6f481e01bce913563f94
 f7edc382fd9bd5381111f0374741f06d0de1699052df361248745794efb86fde3733f3deebd2baac7a75cee58a0a46db0eb5faf3e2d191a6ac81bb1e05cb729b  pmos-trace-sysinit.initd
 975cc14a4203d2f1263e02d51b10bb35464b86c49d9869c5f1d4d3b19c7dac46e1321e35280e4b11b891e04315725491832f7c1d9091fcae4a668e8fc6a05c9a  pmos-trace-boot.initd
 b874d87bce60dfef7c6f7ffb6c935c7de46f61f835f0e0b0021ec94cd35bb1d983e4385935b91a8753d95215e289e485f271182baae37d22f52508517ff3dc9a  pmos-trace-default.initd
-65894165c74ad5bc7aa895672090579078dd2d0523bf8f8abf01c2708d09b05c516b94211ccf41f4a713c9c2c9bbddf7cbfa0158d5977e2b9caa19c73ee053bf  s10-edc-xorg.conf
+9c290492e50fffd6e5de9306fd92b9348f439b514201fc7a7ef5bffd5d8a2d753fd516e43fe53d8c347dbb118b18c89b6f995a5e41eda84774eb5123a3ce47a7  s10-edc-xorg.conf
 c5c65bb789a53f7eab92774e15f383fc6b3e2f6272705e6a607fcd6e4a152a10d6977afa55226af3f02b75551207cf7fd02765042e9e5b56b71c9f4b38f1bc99  s10-lightdm-no-autologin.conf
 ad80cda9ab38a90a443068aaf05298f7a8cc49097c916989b56f9d43bcbeb854cfd2c8534474eaf7f97ae332a003d0b85241660b8a998825f285cd8b9136d5c0  s10-rootfs-cleanup.initd
 cf1239862745c1afa0c215fdb75112881ae4d529d7c4eb334bf37b12cb76d40415db3d8548ca707e1a6dac76323e14e1f33bd21a9124e16bda34f1571ce8c13b  s10-xfce-applications.menu
