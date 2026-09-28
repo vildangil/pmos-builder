@@ -2,7 +2,7 @@
 pkgname=device-huawei-s10-101x
 pkgdesc="Huawei MediaPad 10 FHD S10-101x"
 pkgver=0.1
-pkgrel=9
+pkgrel=10
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
@@ -77,13 +77,11 @@ package() {
 	install -Dm644 "$srcdir/s10-xfce-settings-manager.menu" \
 		"$pkgdir/usr/share/s10-xfce-defaults/xfce-settings-manager.menu"
 
-	# XFCE board defaults. Do not replace Alpine/XFCE's own Garcon menu XML here.
-	# The session helper starts only missing standard XFCE components and creates
-	# a few recovery launchers in the user's XDG application directory.
+	# XFCE now starts correctly through the normal LightDM session. Keep the
+	# helper binary for manual recovery/debugging, but do not autostart it: the
+	# old helper duplicated Terminal/Files/Applications/Settings on ~/Desktop.
 	install -Dm755 "$srcdir/s10-xfce-session-fix" \
 		"$pkgdir/usr/libexec/s10-xfce-session-fix"
-	install -Dm644 "$srcdir/s10-xfce-session-fix.desktop" \
-		"$pkgdir/etc/xdg/autostart/s10-xfce-session-fix.desktop"
 	install -Dm644 "$srcdir/s10-xdg.sh" \
 		"$pkgdir/etc/profile.d/s10-xdg.sh"
 }
